@@ -21,6 +21,14 @@ abstract class sfDoctrineRecord extends Doctrine_Record
     protected static $_defaultCulture = 'en';
 
     /**
+     * Component => magic method => the field or relation name __call() resolved it to. The resolution reads only
+     * the table's fields and relations, so a relation bound after a method's first call is not seen by it.
+     *
+     * @var array
+     */
+    private static $_magicEntityNames = [];
+
+    /**
      * Returns a string representation of the record.
      *
      * @return string A string representation of the record
@@ -59,9 +67,13 @@ abstract class sfDoctrineRecord extends Doctrine_Record
 
         try {
             if (in_array($verb = substr($method, 0, 3), ['set', 'get'])) {
-                $name = substr($method, 3);
-
                 $table = $this->getTable();
+                $component = $table->getComponentName();
+                if (isset(self::$_magicEntityNames[$component][$method])) {
+                    return $this->{$verb}(self::$_magicEntityNames[$component][$method], ...$arguments);
+                }
+
+                $name = substr($method, 3);
                 if ($table->hasRelation($name)) {
                     $entityName = $name;
                 } elseif ($table->hasField($fieldName = $table->getFieldName($name))) {
@@ -88,10 +100,9 @@ abstract class sfDoctrineRecord extends Doctrine_Record
                     }
                 }
 
-                return call_user_func_array(
-                    [$this, $verb],
-                    array_merge([$entityName], $arguments)
-                );
+                self::$_magicEntityNames[$component][$method] = $entityName;
+
+                return $this->{$verb}($entityName, ...$arguments);
             }
             $failed = true;
         } catch (Exception $e) {
